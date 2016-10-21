@@ -115,14 +115,13 @@ $ gcc -o pidns_init_sleep pidns_init_sleep.c
 $ su # 需要root权限才能够创建PID namespace
 Password：
 # ./pidns_init_sleep /proc2
-PID of child created by clone() is 4069
-childFunc(): PID = 1
+PID of child created by clone() is 113796
+childFunc(): PID  = 1
 childFunc(): PPID = 0
 Mounting procfs at /proc2
-
 ```
 
-前两行输出说明了**在不同的PID namespace中子进程具有不同的进程ID**，也就是说，子进程在clone系统调用所在的PID namespace中的进程ID为4069，而在新创建的PID namespace中进程ID为1。
+前两行输出说明了**在不同的PID namespace中子进程具有不同的进程ID**，也就是说，子进程在clone系统调用所在的PID namespace中的进程ID为113796，而在新创建的PID namespace中进程ID为1。
 
 接着第三行显示了在**新创建的PID namespace中，子进程的PPID为0（getppid()的返回值）**。一个进程只能看到跟自己在同一个PID namespace中或者其子PID namespace中的进程，在该示例程序中，子进程根其父进程不在同一个PID namespace中，子进程不能看到其父PID namespace中的进程，因此，getppid()返回子进程的PPID为0.
 
@@ -146,6 +145,57 @@ Mounting procfs at /proc2
 ```
 在我们的示例程序中，mount_point的值就是通过命令行参数传递进来的值`/proc2`。
 
+我们的示例程序运行在shell会话中，并且挂载/proc文件系统到目录`/proc2`下，一般在实际中，/proc文件系统应该挂载到边走的目录/proc下。为了防止不同PID namespace中的进程信息都在/proc目录下，给我们的演示带来困惑，这里我们将子PID namespace的/proc文件系统，挂载到不同的目录下。
+
+在/proc/PID目录下，存放的是父PID namespace的进程信息，在/proc2/PID目录下，存放的是子PID namespace的进程信息。需要强调的是，在shell会话中，尽管子PID namespace中的进程可以看到/proc目录下的进程信息，但这些信息对子PID namespace中的进程都是没有意义的，因为系统调用解释PID时，只从自己所处的PID namespace中寻找进程信息。
+
+将/proc文件系统挂载到/proc目录下是很有必要的，因为一些命令。例如`ps`会依赖该目录下的信息。有两种方法将其挂载到/proc目录下，且不会与父PID namespace相冲突。
+
+* 在clone系统调用时，同时传递flag  CLONE_NEWNS 新建一个mount namespace。
+* 子进程通过系统调用 chroot() 切换其跟目录。
+
+我们可以将上面运行的程序停止，并使用ps命令在父PID namespace中查看父进程和子进程的信息。
+
+```bash
+^Z
+[1]+  Stopped                 ./pidns_init_sleep /proc2
+# ps -C sleep -C pidns_init_sleep -o "pid ppid stat cmd"
+   PID   PPID STAT CMD
+113795  25038 T    ./pidns_init_sleep /proc2
+113796 113795 S    sleep 600
+```
+
+最后一行sleep进程的PPID的值(113795)就是pidns_init_sleep进程的进程ID。我们可以通过命令readlink读取文件`/proc/PID/ns/pid`，可以看到这两个进程处于不同的PID namesapce中
+
+```bash
+# readlink /proc/113795/ns/pid 
+pid:[4026531836]
+# readlink /proc/113796/ns/pid 
+pid:[4026532455]
+```
+
+通过查看目录`/proc2`，我们可以看到子PID namesapce中含有如下进程：
+
+```bash
+# ls -d /proc2/[1-9]*
+/proc2/1
+```
+
+子PID namespace中只含有一个进程，其进程ID为1，进一步，通过查看`/proc2/PID/status`可以得到如下信息:
+
+```bash
+# cat /proc2/1/status | egrep '^(Name|PP*id)'
+Name:	sleep
+Pid:	1
+PPid:	0
+```
+在子PID namespace中，子进程的PPID的值为0，跟系统调用`getppid()`返回的值一样。
 
 ## PID namespace的嵌套
+
+## PID namespace的init进程
+
+## 信号和init进程
+
+## unshare()和setns()
 
