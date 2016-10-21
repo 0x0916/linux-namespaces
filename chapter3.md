@@ -336,7 +336,27 @@ sleep在不同级别的PID namespace中都有其不同的进程ID。
 
 ## PID namespace的init进程
 
+在一个新的PID namespace中，进程号为1的进程就是init进程，该进程是PID namespace中第一个创建的进程。跟传统的linux系统一样，该进程比较特殊。例如，它需要回收负责回收所有孤儿进程的资源。另外，发送给init进程的信号也会被屏蔽。
+
+### 示例
+
+### 结论
+
+在PID namespace中，当一个进程的父进程退出后，该进程变成了孤儿进程，这时，孤儿进程会被PID namespace中的init进程领养，也就是说，其父进程就会变为PID namespace中的init进程。
+
 ## 信号和init进程
+
+跟传统linux系统中init一样，PID namespace中的init进程对信号的处理也比较特殊。
+
+默认情况下，同一个PID namespace中的进程发送给其init进程的任何信号都会被屏蔽，也就是说，容器内无法杀死init进程。如果init进程为某个信号建立信号响应方法，则可以发送该信号给init进程。
+
+一个PID namespace的父PID namespace中的进程也只是可以给其init进程建立了信号响应方法的信号（但是，信号SGIKILL和SIGSTOP信号除外）。也就是说，默认情况下，父PID namespace中的进程可以给其子PID namespace的init进程发送信号SIGKILL和SIGSTOP。
+
+如果PID namespace中的init进程退出了，其PID namespace中的所有进程都会退出。
+
+一个PID namespace中的init进程退出后，该PID namespace也会被删除，但是如果该PID namespace中的某个进程的/proc/PID/ns/pid被打开了或者被bind mounted，该PID namespace暂时不会删除。此时，如果在该PID namespace中创建新的进程时会失败（返回错误ENOME）。
+
+### 示例
 
 ## unshare()和setns()
 
