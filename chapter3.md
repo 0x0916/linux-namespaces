@@ -193,6 +193,147 @@ PPid:	0
 
 ## PID namespace的嵌套
 
+PID namespace 是可以嵌套的，嵌套的PID namesapce具有parent-child层级的关系。进程只能**看到**同一个PID namespace中的进程和其子PID namespace的进程信息（包括所有后代PID namespace）。这里的**看到**的意思是：可以调用以PID为参数的系统调用，比如`kill()`来发送信号给某个进程。反过来，子PID namespace中的进程不能看到其父PID namespace中的进程信息。
+
+进程在每一个PID namespace层级上都有一个进程ID。`getpid()`系统调用总是返回调用者所在的PID namespace中进程的进程ID。
+
+我们通过如下的示例程序，学习和了解一下PID namesapce的嵌套：
+
+```c
+/* multi_pidns.c
+ *
+ * Create a series of child process in nested PID namespaces
+ */
+#define _GNU_SOURCE
+#include <sys/wait.h>
+#include <sys/mount.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sched.h>
+#include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <signal.h>
+#include <limits.h>
+
+
+/* A simple error-handling function: print an error message based
+   on the value `errno` and terminate the calling process
+*/
+#define bail(msg)				\
+	do { perror(msg);			\
+		exit(EXIT_FAILURE);		\
+	} while (0)
+
+
+#define STACK_SIZE	(1024 * 1024)	// stack size for cloned child
+
+static char child_stack[STACK_SIZE];
+
+/* Recursively create a series of child process in nested PID namespaces.
+  'arg' is an integer that counts down to 0 during the recursion.
+  When the counter reaches 0, recursion stops and the tail child executes
+  the sleep(1) program.
+  */
+
+static int childFunc(void *arg) {
+	static int first_call = 1;
+	long level = (long) arg;
+
+	if (!first_call) {
+		char mount_point[PATH_MAX];
+		snprintf(mount_point, PATH_MAX, "/proc%c", (char) ('0' + level));
+		mkdir(mount_point, 0555);
+		if (mount("proc", mount_point, "proc", 0, NULL) == -1)
+			bail("mount");
+
+		printf("Mounting procfs at %s\n", mount_point);
+	}
+
+	first_call = 0;
+
+	if (level > 0) {
+		level--;
+		pid_t	child_pid;
+
+		// create child taht has its own PID namespace;
+		// child commences excution in childFunc()
+		child_pid = clone(childFunc, child_stack + STACK_SIZE, CLONE_NEWPID| SIGCHLD, (void*) level);
+		if (child_pid == -1)
+			bail("clone");
+
+		if (waitpid(child_pid, NULL, 0) == -1) // wait for child
+			bail("waitpid");
+	} else {
+		printf("Final child sleeping\n");
+		execlp("sleep", "sleep", "1000", (char *)NULL);
+		bail("execlp");
+	}
+
+	return 0;
+}
+
+int main(int argc, char **argv) {
+	long	levels;
+
+	levels = (argc > 1) ? atoi(argv[1]) : 5;
+	childFunc((void *)levels);
+
+	exit(EXIT_SUCCESS);
+}
+```
+
+该示例程序递归的创建了多个嵌套的PID namespace，并挂载不同的PID namespace中的proc文件系统到不同的目录，最后的一个PID namespace中调用sleep函数。
+
+```bash
+# ./multi_pidns 5
+Mounting procfs at /proc4
+Mounting procfs at /proc3
+Mounting procfs at /proc2
+Mounting procfs at /proc1
+Mounting procfs at /proc0
+Final child sleeping
+```
+
+我们将程序停下来，看一下不同层级的PID namespace中都包含了哪些进程的信息。
+
+```bash
+^Z
+[2]+  Stopped                 ./multi_pidns 5
+# ls -d /proc4/[1-9]*           # 最顶级的PID namespace
+/proc4/1  /proc4/2  /proc4/3  /proc4/4  /proc4/5
+# ls -d /proc3/[1-9]*
+/proc3/1  /proc3/2  /proc3/3  /proc3/4
+# ls -d /proc2/[1-9]*
+/proc2/1  /proc2/2  /proc2/3
+# ls -d /proc1/[1-9]*
+/proc1/1  /proc1/2
+# ls -d /proc0/[1-9]*
+/proc0/1
+```
+
+从中可以看出，每一级的PID namespace中都包含了其PID namespace和其子PID namespace（所有的后世子孙PID namespace）中的进程信息。
+
+```bash
+# grep -H 'Name:.*sleep' /proc?/[1-9]*/status
+/proc0/1/status:Name:	sleep
+/proc1/2/status:Name:	sleep
+/proc2/3/status:Name:	sleep
+/proc3/4/status:Name:	sleep
+/proc4/5/status:Name:	sleep
+
+```
+
+sleep在不同级别的PID namespace中都有其不同的进程ID。
+
+运行示例程序会在系统中残留proc文件系统的挂载点，当程序退出后，我们可以使用如下命令，将其删除：
+
+```bash
+# umount /proc?
+# rmdir /proc?
+```
+
 ## PID namespace的init进程
 
 ## 信号和init进程
