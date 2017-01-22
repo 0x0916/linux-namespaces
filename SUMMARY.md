@@ -6,4 +6,5 @@
 * [PID namespace](chapter3.md)
 * [User namespace](chapter4.md)
 * [Network namespace](chapter5.md)
+* [UTS namespace](uts-namespace.md)
 

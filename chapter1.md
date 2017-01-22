@@ -22,6 +22,8 @@ Namespace是将内核的全局资源进行封装，使得每个namespace都有�
 
 ### UTS namespace
 
+UTS namespace隔离了linux上两个系统标识符`nodename`和`domainname`，我们可以通过系统调用`uname()`查看它们，同时我们也可以通过系统调用`sethostname()`和`setdomainname()`设置它们。在容器的上下文中，UTS namespace允许不同的容器具有不同的`hostname`和`NIS domain name`
+
 ### IPC namespace
 
 ### PID namespace
