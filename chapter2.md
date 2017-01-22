@@ -7,9 +7,10 @@ Namespace API 包括三个系统调用`clone()`、`unshare()`、`setns()`和一�
 
 创建新的namespace的一种方式是使用系统调用`clone()`，该系统调用的原型如下：
 
-```
+```c
 int clone(int (*child_func)(void *), void *child_stack, int flags, void *arg);
 
 ```
+
 
 
